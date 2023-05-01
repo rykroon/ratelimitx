@@ -20,7 +20,7 @@ class RateLimiter:
         """
             Returns the key that will be used to store the data into Redis.
         """
-        return self.delimiter.join([self.prefix, self.identifier, self.duration])
+        return self.delimiter.join([self.prefix, self.identifier, str(self.duration)])
 
     @property
     def retry_after(self):
