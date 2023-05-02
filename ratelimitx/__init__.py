@@ -16,18 +16,18 @@ class RateLimiter:
     delimiter: str = "|"
 
     @property
-    def key(self):
+    def key(self) -> str:
         """
             Returns the key that will be used to store the data into Redis.
         """
         return self.delimiter.join([self.prefix, self.identifier, str(self.duration)])
 
     @property
-    def retry_after(self):
+    def retry_after(self) -> int:
         """
             Return the amount of time in seconds before a retry is allowed.
         """
-        return getattr(self, '_retry_after', None)
+        return getattr(self, '_retry_after', 0)
 
     async def __call__(self, timestamp: float | None = None) -> bool:
         """
@@ -45,7 +45,8 @@ class RateLimiter:
     async def slide_window(self, timestamp: float | None = None) -> bool:
         """
             Remove expired timestamps (slides the window).
-            Return the number of remaing timestamps and the least recent timestamp.
+            Calculate retry_after.
+            Return True if the rate-limited feature can proceed.
         """
         if timestamp is None:
             timestamp = time.time()
@@ -55,7 +56,7 @@ class RateLimiter:
         # Remove expired timestamps.
         pipeline.zremrangebyscore(self.key, min=0, max=timestamp - self.duration)
 
-        # Count the amount of timestamps.
+        # Count the amount of timestamps remaining.
         pipeline.zcount(self.key, min=0, max=timestamp)
 
         # Get the lowest ranked score.
@@ -132,20 +133,32 @@ class MultiRateLimiter:
     def retry_after(self) -> int:
         return getattr(self, '_retry_after', None)
 
-    async def __call__(self, timestamp: float | None):
+    async def __call__(self, timestamp: float | None = None):
         if timestamp is None:
             timestamp = time.time()
 
+        success = await self.slide_windows(timestamp)
+        if success:
+            await self.add_timstamps(timestamp)
+        return success
+
+    async def slide_windows(self, timestamp: float | None = None):
+        if timestamp is None:
+            timestamp = time.time()
+        
         coroutines = [rl.slide_window(timestamp) for rl in self.rate_limiters]
         results = await asyncio.gather(*coroutines)
 
-        if not all(results):
-            self._retry_after = max(
-                [rl.retry_after for rl in self.rate_limiters if rl.retry_after is not None]
-            )
-            return False
+        if all(results):
+            self._retry_after = 0
+            return True
+        
+        self._retry_after = max([rl.retry_after for rl in self.rate_limiters])
+        return False
 
-        self._retry_after = 0
+    async def add_timstamps(self, timestamp: float | None = None):
+        if timestamp is None:
+            timestamp = time.time()
+
         coroutines = [rl.add_timestamp(timestamp) for rl in self.rate_limiters]
         await asyncio.gather(*coroutines)
-        return True
