@@ -1,10 +1,11 @@
+from datetime import datetime
 import time
 
 import pytest
 import pytest_asyncio
 from redis.asyncio import Redis
 
-from ratelimitx import RateLimiter
+from ratelimitx import RateLimiter, RateLimitError
 
 
 @pytest_asyncio.fixture
@@ -23,7 +24,7 @@ def test_ratelimiter_key(client):
         n=5
     )
 
-    assert limiter.key == "ratelimit|test|60"
+    assert limiter.key == "ratelimitx|test|60"
 
     # Test custom prefix
     limiter = RateLimiter(
@@ -45,7 +46,7 @@ def test_ratelimiter_key(client):
         delimiter=":"
     )
 
-    assert limiter.key == "ratelimit:test:60"
+    assert limiter.key == "ratelimitx:test:60"
 
 
 @pytest.mark.asyncio
@@ -165,43 +166,43 @@ async def test_ratelimit(client):
     )
 
     start = time.time()
-
-    result = await limiter(start)
-    assert result == True
-    assert limiter.retry_after == 0
+    await limiter(start)
 
     # 15 seconds later
     fifteen = start + 15
-    result = await limiter(fifteen)
-    assert result == True
-    assert limiter.retry_after == 0
+    await limiter(fifteen)
 
     # 30 seconds later
     thirty = start + 30
-    result = await limiter(thirty)
-    assert result == True
-    assert limiter.retry_after == 0
+    await limiter(thirty)
 
     # 45 seconds later
     forty_five = start + 45
-    result = await limiter(forty_five)
-    assert result == False
-    assert limiter.retry_after == 15
+    with pytest.raises(RateLimitError) as exc_info:
+        await limiter(forty_five)
+
+    retry_after = exc_info.value.retry_after
+    assert retry_after.seconds == 15
+    assert retry_after.date == datetime.fromtimestamp(forty_five + 15)
 
     # 59 seconds later
     fifty_nine = start + 59
-    result = await limiter(fifty_nine)
-    assert result == False
-    assert limiter.retry_after == 1
+    with pytest.raises(RateLimitError) as exc_info:
+        await limiter(fifty_nine)
+    
+    retry_after = exc_info.value.retry_after
+    assert retry_after.seconds == 1
+    assert retry_after.date == datetime.fromtimestamp(fifty_nine + 1)
 
     # 60 seconds later
     sixty = start + 60
-    result = await limiter(sixty)
-    assert result == True
-    assert limiter.retry_after == 0
+    await limiter(sixty)
 
-    # 61 seconds later
-    sixty_one = start + 61
-    result = await limiter(sixty_one)
-    assert result == False
-    assert limiter.retry_after == 14
+    # 65 seconds later
+    sixty_five = start + 65
+    with pytest.raises(RateLimitError) as exc_info:
+        await limiter(sixty_five)
+
+    retry_after = exc_info.value.retry_after
+    assert retry_after.seconds == 10
+    assert retry_after.date == datetime.fromtimestamp(sixty_five + 10)

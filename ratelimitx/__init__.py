@@ -1,8 +1,21 @@
 import asyncio
 from dataclasses import dataclass
+from datetime import datetime
+from functools import cached_property
 import time
 
 from redis.asyncio import Redis
+
+
+@dataclass(order=True)
+class RetryAfter:
+    date: datetime
+    seconds: float
+
+
+@dataclass
+class RateLimitError(Exception):
+    retry_after: RetryAfter
 
 
 @dataclass
@@ -15,33 +28,29 @@ class RateLimiter:
     prefix: str = "ratelimitx"
     delimiter: str = "|"
 
-    @property
+    @cached_property
     def key(self) -> str:
         """
             Returns the key that will be used to store the data into Redis.
         """
         return self.delimiter.join([self.prefix, self.identifier, str(self.duration)])
 
-    @property
-    def retry_after(self) -> int:
-        """
-            Return the amount of time in seconds before a retry is allowed.
-        """
-        return getattr(self, '_retry_after', 0)
-
     async def __call__(self, timestamp: float | None = None, add_timestamp: bool = True):
+        """
+            Raise a RateLimitError if rate limited.
+        """
         if timestamp is None:
             timestamp = time.time()
 
         count, least_recent_timestamp = await self.slide_window(timestamp)
-        if count < self.n:
-            self._retry_after = 0
-            if add_timestamp:
-                await self.add_timestamp(timestamp)
-            return True
+        if count >= self.n:
+            seconds = self.duration - (timestamp - least_recent_timestamp)
+            date = datetime.fromtimestamp(timestamp + seconds)
+            retry_after = RetryAfter(date=date, seconds=seconds)
+            raise RateLimitError(retry_after)
 
-        self._retry_after = self.duration - (timestamp - least_recent_timestamp)
-        return False
+        if add_timestamp:
+            await self.add_timestamp(timestamp)
 
     async def slide_window(self, timestamp: float | None = None) -> tuple[int, float | None]:
         """
@@ -124,28 +133,20 @@ class MultiRateLimiter:
 
         return cls.from_mapping(client, identifier, mapping)
 
-    @property
-    def retry_after(self) -> int:
-        return getattr(self, '_retry_after', None)
-
     async def __call__(self, timestamp: float | None = None):
         if timestamp is None:
             timestamp = time.time()
 
+        # Perform rate-limiting on each rate limiter.
         coroutines = [rl(timestamp, add_timestamp=False) for rl in self.rate_limiters]
-        results = await asyncio.gather(*coroutines)
-        success = all(results)
+        results = await asyncio.gather(*coroutines, return_exceptions=True)
+        errors = [result for result in results if isinstance(result, RateLimitError)]
+        if errors:
+            # If there are any errors then find the max retry after
+            # and raise a RateLimitError.
+            retry_after = max(error.retry_after for error in errors)
+            raise RateLimitError(retry_after)
 
-        if success:
-            self._retry_after = 0
-            await self.add_timstamps(timestamp)
-
-        self._retry_after = max([rl.retry_after for rl in self.rate_limiters])
-        return success
-
-    async def add_timstamps(self, timestamp: float | None = None):
-        if timestamp is None:
-            timestamp = time.time()
-
+        # Add timestamps.
         coroutines = [rl.add_timestamp(timestamp) for rl in self.rate_limiters]
         await asyncio.gather(*coroutines)
