@@ -12,7 +12,7 @@ class RateLimiter:
     identifier: str
     duration: int
     n: int
-    prefix: str = "ratelimit"
+    prefix: str = "ratelimitx"
     delimiter: str = "|"
 
     @property
@@ -29,24 +29,25 @@ class RateLimiter:
         """
         return getattr(self, '_retry_after', 0)
 
-    async def __call__(self, timestamp: float | None = None) -> bool:
-        """
-            Perform all parts of the rate limiting algorithm.
-        """
+    async def __call__(self, timestamp: float | None = None, add_timestamp: bool = True):
         if timestamp is None:
             timestamp = time.time()
 
-        success = await self.slide_window(timestamp)
-        if success:
-            await self.add_timestamp(timestamp)
+        count, least_recent_timestamp = await self.slide_window(timestamp)
+        if count < self.n:
+            self._retry_after = 0
+            if add_timestamp:
+                await self.add_timestamp(timestamp)
+            return True
 
-        return success
+        self._retry_after = self.duration - (timestamp - least_recent_timestamp)
+        return False
 
-    async def slide_window(self, timestamp: float | None = None) -> bool:
+    async def slide_window(self, timestamp: float | None = None) -> tuple[int, float | None]:
         """
             Remove expired timestamps (slides the window).
-            Calculate retry_after.
-            Return True if the rate-limited feature can proceed.
+            Returns a tuple containing the number of unexpired timestamps
+            and the least recent timestamp if applicable or None.
         """
         if timestamp is None:
             timestamp = time.time()
@@ -59,17 +60,11 @@ class RateLimiter:
         # Count the amount of timestamps remaining.
         pipeline.zcount(self.key, min=0, max=timestamp)
 
-        # Get the lowest ranked score.
+        # Get the lowest ranked score. (least recent timestamp)
         pipeline.zrange(self.key, start=0, end=0)
 
         _, count, scores = await pipeline.execute()
-        if count < self.n:
-            self._retry_after = 0
-            return True
-
-        lowest_score = float(scores[0])
-        self._retry_after = self.duration - (timestamp - lowest_score)
-        return False
+        return count, float(scores[0]) if scores else None
 
     async def add_timestamp(self, timestamp: float | None = None):
         """
@@ -117,7 +112,7 @@ class MultiRateLimiter:
         mapping = {}
         if per_second is not None:
             mapping[1] = per_second
-        
+
         if per_minute is not None:
             mapping[60] = per_minute
 
@@ -137,24 +132,16 @@ class MultiRateLimiter:
         if timestamp is None:
             timestamp = time.time()
 
-        success = await self.slide_windows(timestamp)
-        if success:
-            await self.add_timstamps(timestamp)
-        return success
-
-    async def slide_windows(self, timestamp: float | None = None):
-        if timestamp is None:
-            timestamp = time.time()
-        
-        coroutines = [rl.slide_window(timestamp) for rl in self.rate_limiters]
+        coroutines = [rl(timestamp, add_timestamp=False) for rl in self.rate_limiters]
         results = await asyncio.gather(*coroutines)
+        success = all(results)
 
-        if all(results):
+        if success:
             self._retry_after = 0
-            return True
-        
+            await self.add_timstamps(timestamp)
+
         self._retry_after = max([rl.retry_after for rl in self.rate_limiters])
-        return False
+        return success
 
     async def add_timstamps(self, timestamp: float | None = None):
         if timestamp is None:
