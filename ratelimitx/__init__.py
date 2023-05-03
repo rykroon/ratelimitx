@@ -126,10 +126,10 @@ class MultiRateLimiter:
             mapping[60] = per_minute
 
         if per_hour is not None:
-            mapping[60*60] = per_hour
+            mapping[3600] = per_hour
 
         if per_day is not None:
-            mapping[24*60*60] = per_day
+            mapping[86400] = per_day
 
         return cls.from_mapping(client, identifier, mapping)
 
