@@ -85,36 +85,72 @@ def test_new_four(client):
     assert multilimiter.rate_limiters[3] == day_limiter
 
 
+def timsim(duration: int, step: float):
+    """
+        A generator that simulates time.
+    """
+    elapsed_time = 0
+    start_time = time.time()
+    while elapsed_time <= duration:
+        yield start_time + elapsed_time, elapsed_time
+        elapsed_time+= step
+
+
 @pytest.mark.asyncio
 async def test_ratelimit(client):
     multilimiter = MultiRateLimiter.new(
-        client=client, identifier="test", per_second=1, per_minute=3
+        client=client, identifier="test", per_second=1, per_minute=6
     )
 
-    """
-        Think of a better way to test this.
-    """
+    # simulate every half second in the span of two minutes.
+    for ts, time_elapsed in timsim(120, .5):
 
-    start = time.time()
-    now = start
-    await multilimiter(now)
+        # add some valid requests.
+        if time_elapsed in (0, 2, 4, 6, 8, 10, 60, 65, 70, 75, 80, 85):
+            await multilimiter(ts)
 
-    # ~~~ half second later ~~~
-    now = start + .5
-    with pytest.raises(RateLimitError) as exc_info:
-        await multilimiter(now)
+        # ~~~ Test for specific scenarios that will be rate limited. ~~~
 
-    retry_after = exc_info.value.retry_after
-    assert retry_after.seconds == .5
-    assert retry_after.date == datetime.fromtimestamp(start + 1)
+        if time_elapsed == 0.5:
+            # Test seconds rate limiter
+            with pytest.raises(RateLimitError) as exc_info:
+                await multilimiter(ts)
+            
+            retry_after = exc_info.value.retry_after
+            assert retry_after.seconds == .5
+            assert retry_after.date == datetime.fromtimestamp(ts + .5)
 
-    # ~~~ Two minutes later ~~~
-    now = start + 120
-    await multilimiter(now)
+        if time_elapsed == 10.5:
+            # This will be stopped by both rate limiters.
+            # make sure that the retry after with the max date
+            # is returned.
+            with pytest.raises(RateLimitError) as exc_info:
+                await multilimiter(ts)
+            
+            retry_after = exc_info.value.retry_after
+            assert retry_after.seconds == 49.5
+            assert retry_after.date == datetime.fromtimestamp(ts + 49.5)
+        
+        if time_elapsed == 11:
+            with pytest.raises(RateLimitError) as exc_info:
+                await multilimiter(ts)
 
-    # ~~~ Two minutes and one second later ~~~
-    now = start + 121
-    await multilimiter(now)
+            retry_after = exc_info.value.retry_after
+            assert retry_after.seconds == 49
+            assert retry_after.date == datetime.fromtimestamp(ts + 49)
 
+        if time_elapsed == 60.5:
+            with pytest.raises(RateLimitError) as exc_info:
+                await multilimiter(ts)
 
+            retry_after = exc_info.value.retry_after
+            assert retry_after.seconds == 1.5
+            assert retry_after.date == datetime.fromtimestamp(ts + 1.5)
 
+        if time_elapsed == 70.5:
+            with pytest.raises(RateLimitError) as exc_info:
+                await multilimiter(ts)
+
+            retry_after = exc_info.value.retry_after
+            assert retry_after.seconds == 0.5
+            assert retry_after.date == datetime.fromtimestamp(ts + 0.5)
