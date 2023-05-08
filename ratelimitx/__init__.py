@@ -1,7 +1,6 @@
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime
-from functools import cached_property
 import time
 
 from redis.asyncio import Redis
@@ -21,23 +20,21 @@ class RateLimitError(Exception):
 @dataclass
 class RateLimiter:
     client: Redis
-    identifier: str
     window_length: int
     n: int
-    prefix: str = "ratelimitx"
+    prefix: str | None = None
     delimiter: str = "|"
 
-    @cached_property
-    def key(self) -> str:
-        """
-        Returns the key that will be used to store the data into Redis.
-        """
-        return self.delimiter.join(
-            [self.prefix, self.identifier, str(self.window_length)]
-        )
+    def _build_key(self, identifier: str) -> str:
+        if self.prefix is None:
+            return self.delimiter.join([identifier, str(self.window_length)])
+        return self.delimiter.join([self.prefix, identifier, str(self.window_length)])
 
     async def __call__(
-        self, timestamp: float | None = None, add_timestamp: bool = True
+        self,
+        identifier: str,
+        timestamp: float | None = None,
+        add_timestamp: bool = True,
     ):
         """
         Raise a RateLimitError if rate limited.
@@ -45,7 +42,7 @@ class RateLimiter:
         if timestamp is None:
             timestamp = time.time()
 
-        count, least_recent_timestamp = await self.slide_window(timestamp)
+        count, least_recent_timestamp = await self.slide_window(identifier, timestamp)
         if count >= self.n:
             seconds = self.window_length - (timestamp - least_recent_timestamp)
             date = datetime.fromtimestamp(timestamp + seconds)
@@ -53,43 +50,45 @@ class RateLimiter:
             raise RateLimitError(retry_after)
 
         if add_timestamp:
-            await self.add_timestamp(timestamp)
+            await self.add_timestamp(identifier, timestamp)
 
     async def slide_window(
-        self, timestamp: float | None = None
+        self, identifier: str, timestamp: float | None = None
     ) -> tuple[int, float | None]:
         """
         Remove expired timestamps (slides the window).
         Returns a tuple containing the number of unexpired timestamps
         and the least recent timestamp if applicable or None.
         """
+        key = self._build_key(identifier)
         if timestamp is None:
             timestamp = time.time()
 
         pipeline = self.client.pipeline()
 
         # Remove expired timestamps.
-        pipeline.zremrangebyscore(self.key, min=0, max=timestamp - self.window_length)
+        pipeline.zremrangebyscore(key, min=0, max=timestamp - self.window_length)
 
         # Count the amount of timestamps remaining.
-        pipeline.zcount(self.key, min=0, max=timestamp)
+        pipeline.zcount(key, min=0, max=timestamp)
 
         # Get the lowest ranked score. (least recent timestamp)
-        pipeline.zrange(self.key, start=0, end=0)
+        pipeline.zrange(key, start=0, end=0)
 
         _, count, scores = await pipeline.execute()
         return count, float(scores[0]) if scores else None
 
-    async def add_timestamp(self, timestamp: float | None = None):
+    async def add_timestamp(self, identifier: str, timestamp: float | None = None):
         """
         Adds a timestamp and updates the expiration.
         """
+        key = self._build_key(identifier)
         if timestamp is None:
             timestamp = time.time()
 
         pipeline = self.client.pipeline()
-        pipeline.zadd(self.key, {timestamp: timestamp})
-        pipeline.expire(self.key, self.window_length)
+        pipeline.zadd(key, {timestamp: timestamp})
+        pipeline.expire(key, self.window_length)
         await pipeline.execute()
 
 
@@ -98,14 +97,13 @@ class MultiRateLimiter:
     rate_limiters: list[RateLimiter]
 
     @classmethod
-    def from_mapping(cls, client: Redis, identifier: str, mapping: dict[int, int]):
+    def from_mapping(cls, client: Redis, mapping: dict[int, int]):
         """
         Creates a new multi-ratelimiter by creating new rate limiter objects
         from a mapping containing window lengths for keys and units for values.
         """
         rate_limiters = [
-            RateLimiter(client, identifier, window_length, n)
-            for window_length, n in mapping.items()
+            RateLimiter(client, window_length, n) for window_length, n in mapping.items()
         ]
         return cls(rate_limiters)
 
@@ -113,7 +111,6 @@ class MultiRateLimiter:
     def new(
         cls,
         client: Redis,
-        identifier: str,
         per_second: int | None = None,
         per_minute: int | None = None,
         per_hour: int | None = None,
@@ -137,14 +134,16 @@ class MultiRateLimiter:
         if per_day is not None:
             mapping[86400] = per_day
 
-        return cls.from_mapping(client, identifier, mapping)
+        return cls.from_mapping(client, mapping)
 
-    async def __call__(self, timestamp: float | None = None):
+    async def __call__(self, identifier: str, timestamp: float | None = None):
         if timestamp is None:
             timestamp = time.time()
 
         # Perform rate-limiting on each rate limiter.
-        coroutines = [rl(timestamp, add_timestamp=False) for rl in self.rate_limiters]
+        coroutines = [
+            rl(identifier, timestamp, add_timestamp=False) for rl in self.rate_limiters
+        ]
         results = await asyncio.gather(*coroutines, return_exceptions=True)
         errors = [result for result in results if isinstance(result, RateLimitError)]
         if errors:
@@ -154,5 +153,7 @@ class MultiRateLimiter:
             raise RateLimitError(retry_after)
 
         # Add timestamps.
-        coroutines = [rl.add_timestamp(timestamp) for rl in self.rate_limiters]
+        coroutines = [
+            rl.add_timestamp(identifier, timestamp) for rl in self.rate_limiters
+        ]
         await asyncio.gather(*coroutines)
