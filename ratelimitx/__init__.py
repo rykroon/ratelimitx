@@ -103,7 +103,8 @@ class MultiRateLimiter:
         from a mapping containing window lengths for keys and units for values.
         """
         rate_limiters = [
-            RateLimiter(client, window_length, n) for window_length, n in mapping.items()
+            RateLimiter(client, window_length, n)
+            for window_length, n in mapping.items()
         ]
         return cls(rate_limiters)
 
