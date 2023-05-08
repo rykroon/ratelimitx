@@ -20,10 +20,9 @@ class RateLimitError(Exception):
 
 @dataclass
 class RateLimiter:
-
     client: Redis
     identifier: str
-    duration: int
+    window_length: int
     n: int
     prefix: str = "ratelimitx"
     delimiter: str = "|"
@@ -31,20 +30,24 @@ class RateLimiter:
     @cached_property
     def key(self) -> str:
         """
-            Returns the key that will be used to store the data into Redis.
+        Returns the key that will be used to store the data into Redis.
         """
-        return self.delimiter.join([self.prefix, self.identifier, str(self.duration)])
+        return self.delimiter.join(
+            [self.prefix, self.identifier, str(self.window_length)]
+        )
 
-    async def __call__(self, timestamp: float | None = None, add_timestamp: bool = True):
+    async def __call__(
+        self, timestamp: float | None = None, add_timestamp: bool = True
+    ):
         """
-            Raise a RateLimitError if rate limited.
+        Raise a RateLimitError if rate limited.
         """
         if timestamp is None:
             timestamp = time.time()
 
         count, least_recent_timestamp = await self.slide_window(timestamp)
         if count >= self.n:
-            seconds = self.duration - (timestamp - least_recent_timestamp)
+            seconds = self.window_length - (timestamp - least_recent_timestamp)
             date = datetime.fromtimestamp(timestamp + seconds)
             retry_after = RetryAfter(date=date, seconds=seconds)
             raise RateLimitError(retry_after)
@@ -52,11 +55,13 @@ class RateLimiter:
         if add_timestamp:
             await self.add_timestamp(timestamp)
 
-    async def slide_window(self, timestamp: float | None = None) -> tuple[int, float | None]:
+    async def slide_window(
+        self, timestamp: float | None = None
+    ) -> tuple[int, float | None]:
         """
-            Remove expired timestamps (slides the window).
-            Returns a tuple containing the number of unexpired timestamps
-            and the least recent timestamp if applicable or None.
+        Remove expired timestamps (slides the window).
+        Returns a tuple containing the number of unexpired timestamps
+        and the least recent timestamp if applicable or None.
         """
         if timestamp is None:
             timestamp = time.time()
@@ -64,7 +69,7 @@ class RateLimiter:
         pipeline = self.client.pipeline()
 
         # Remove expired timestamps.
-        pipeline.zremrangebyscore(self.key, min=0, max=timestamp - self.duration)
+        pipeline.zremrangebyscore(self.key, min=0, max=timestamp - self.window_length)
 
         # Count the amount of timestamps remaining.
         pipeline.zcount(self.key, min=0, max=timestamp)
@@ -77,14 +82,14 @@ class RateLimiter:
 
     async def add_timestamp(self, timestamp: float | None = None):
         """
-            Adds a timestamp and updates the expiration.
+        Adds a timestamp and updates the expiration.
         """
         if timestamp is None:
             timestamp = time.time()
 
         pipeline = self.client.pipeline()
         pipeline.zadd(self.key, {timestamp: timestamp})
-        pipeline.expire(self.key, self.duration)
+        pipeline.expire(self.key, self.window_length)
         await pipeline.execute()
 
 
@@ -95,11 +100,12 @@ class MultiRateLimiter:
     @classmethod
     def from_mapping(cls, client: Redis, identifier: str, mapping: dict[int, int]):
         """
-            Creates a new multi-ratelimiter by creating new rate limiter objects
-            from a mapping containing durations for keys and units for values.
+        Creates a new multi-ratelimiter by creating new rate limiter objects
+        from a mapping containing window lengths for keys and units for values.
         """
         rate_limiters = [
-            RateLimiter(client, identifier, duration, n) for duration, n in mapping.items()
+            RateLimiter(client, identifier, window_length, n)
+            for window_length, n in mapping.items()
         ]
         return cls(rate_limiters)
 
@@ -111,11 +117,11 @@ class MultiRateLimiter:
         per_second: int | None = None,
         per_minute: int | None = None,
         per_hour: int | None = None,
-        per_day: int | None = None
+        per_day: int | None = None,
     ):
         """
-            Creates a new multi-ratelimiter by specifying the number
-            of units for each unit of time.
+        Creates a new multi-ratelimiter by specifying the number
+        of units for each unit of time.
         """
         assert any([per_second, per_minute, per_hour, per_day])
         mapping = {}
