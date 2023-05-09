@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from datetime import datetime
 import time
 
@@ -85,15 +86,19 @@ def test_new_four(client):
     assert multilimiter.rate_limiters[3] == day_limiter
 
 
-def timsim(duration: int, step: float):
+def timsim(duration_secs: int, step: float) -> Iterable[tuple[float, float]]:
     """
+        Time Simulator (timsim)
         A generator that simulates time.
+        duration_secs: The total duration to be simulated in seconds.
+        step: The amount of time that passes per iteration.
+        returns: A tuple containing the timestamp and the elapsed time.
     """
     elapsed_time = 0
     start_time = time.time()
-    while elapsed_time <= duration:
+    while elapsed_time <= duration_secs:
         yield start_time + elapsed_time, elapsed_time
-        elapsed_time+= step
+        elapsed_time += step
 
 
 @pytest.mark.asyncio
