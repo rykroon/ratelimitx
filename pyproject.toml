@@ -29,9 +29,9 @@ dependencies = [
 dynamic = ["version"]
 
 [project.urls]
-Documentation = "https://github.com/unknown/ratelimitx#readme"
-Issues = "https://github.com/unknown/ratelimitx/issues"
-Source = "https://github.com/unknown/ratelimitx"
+Documentation = "https://github.com/rykroon/ratelimitx#readme"
+Issues = "https://github.com/rykroon/ratelimitx/issues"
+Source = "https://github.com/rykroon/ratelimitx"
 
 [tool.hatch.version]
 path = "ratelimitx/__about__.py"
