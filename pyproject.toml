@@ -24,7 +24,7 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-  "redis==4.5.*"
+  "redis>=4.4"
 ]
 dynamic = ["version"]
 
@@ -43,8 +43,16 @@ dependencies = [
   "pytest-cov",
 ]
 [tool.hatch.envs.default.scripts]
-cov = "pytest --cov-report=term-missing --cov-config=pyproject.toml --cov=ratelimitx --cov=tests {args}"
-no-cov = "cov --no-cov {args}"
+test = "pytest {args:tests}"
+test-cov = "coverage run -m pytest {args:tests}"
+cov-report = [
+  "- coverage combine",
+  "coverage report",
+]
+cov = [
+  "test-cov",
+  "cov-report",
+]
 
 [[tool.hatch.envs.test.matrix]]
 python = ["39", "310", "311"]
