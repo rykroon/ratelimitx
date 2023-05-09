@@ -2,6 +2,7 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 import time
+from typing import Optional
 
 from redis.asyncio import Redis
 
@@ -22,7 +23,7 @@ class RateLimiter:
     client: Redis
     window_length: int
     n: int
-    prefix: str | None = None
+    prefix: Optional[str] = None
     delimiter: str = "|"
 
     def _build_key(self, identifier: str) -> str:
@@ -33,7 +34,7 @@ class RateLimiter:
     async def __call__(
         self,
         identifier: str,
-        timestamp: float | None = None,
+        timestamp: Optional[float] = None,
         add_timestamp: bool = True,
     ):
         """
@@ -53,8 +54,8 @@ class RateLimiter:
             await self.add_timestamp(identifier, timestamp)
 
     async def slide_window(
-        self, identifier: str, timestamp: float | None = None
-    ) -> tuple[int, float | None]:
+        self, identifier: str, timestamp: Optional[float] = None
+    ) -> tuple[int, Optional[float]]:
         """
         Remove expired timestamps (slides the window).
         Returns a tuple containing the number of unexpired timestamps
@@ -78,7 +79,7 @@ class RateLimiter:
         _, count, scores = await pipeline.execute()
         return count, float(scores[0]) if scores else None
 
-    async def add_timestamp(self, identifier: str, timestamp: float | None = None):
+    async def add_timestamp(self, identifier: str, timestamp: Optional[float] = None):
         """
         Adds a timestamp and updates the expiration.
         """
@@ -112,10 +113,10 @@ class MultiRateLimiter:
     def new(
         cls,
         client: Redis,
-        per_second: int | None = None,
-        per_minute: int | None = None,
-        per_hour: int | None = None,
-        per_day: int | None = None,
+        per_second: Optional[int] = None,
+        per_minute: Optional[int] = None,
+        per_hour: Optional[int] = None,
+        per_day: Optional[int] = None,
     ):
         """
         Creates a new multi-ratelimiter by specifying the number
@@ -137,7 +138,7 @@ class MultiRateLimiter:
 
         return cls.from_mapping(client, mapping)
 
-    async def __call__(self, identifier: str, timestamp: float | None = None):
+    async def __call__(self, identifier: str, timestamp: Optional[float] = None):
         if timestamp is None:
             timestamp = time.time()
 
