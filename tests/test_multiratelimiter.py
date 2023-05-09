@@ -107,14 +107,14 @@ async def test_ratelimit(client):
 
         # add some valid requests.
         if time_elapsed in (0, 2, 4, 6, 8, 10, 60, 65, 70, 75, 80, 85):
-            await multilimiter("test", ts)
+            await multilimiter.ratelimit("test", ts)
 
         # ~~~ Test for specific scenarios that will be rate limited. ~~~
 
         if time_elapsed == 0.5:
             # Test seconds rate limiter
             with pytest.raises(RateLimitError) as exc_info:
-                await multilimiter("test", ts)
+                await multilimiter.ratelimit("test", ts)
             
             retry_after = exc_info.value.retry_after
             assert retry_after.seconds == .5
@@ -125,7 +125,7 @@ async def test_ratelimit(client):
             # make sure that the retry after with the max date
             # is returned.
             with pytest.raises(RateLimitError) as exc_info:
-                await multilimiter("test", ts)
+                await multilimiter.ratelimit("test", ts)
             
             retry_after = exc_info.value.retry_after
             assert retry_after.seconds == 49.5
@@ -133,7 +133,7 @@ async def test_ratelimit(client):
         
         if time_elapsed == 11:
             with pytest.raises(RateLimitError) as exc_info:
-                await multilimiter("test", ts)
+                await multilimiter.ratelimit("test", ts)
 
             retry_after = exc_info.value.retry_after
             assert retry_after.seconds == 49
@@ -141,7 +141,7 @@ async def test_ratelimit(client):
 
         if time_elapsed == 60.5:
             with pytest.raises(RateLimitError) as exc_info:
-                await multilimiter("test", ts)
+                await multilimiter.ratelimit("test", ts)
 
             retry_after = exc_info.value.retry_after
             assert retry_after.seconds == 1.5
@@ -149,7 +149,7 @@ async def test_ratelimit(client):
 
         if time_elapsed == 70.5:
             with pytest.raises(RateLimitError) as exc_info:
-                await multilimiter("test", ts)
+                await multilimiter.ratelimit("test", ts)
 
             retry_after = exc_info.value.retry_after
             assert retry_after.seconds == 0.5

@@ -165,20 +165,20 @@ async def test_ratelimit(client):
     )
 
     start = time.time()
-    await limiter("test", start)
+    await limiter.ratelimit("test", start)
 
     # 15 seconds later
     fifteen = start + 15
-    await limiter("test", fifteen)
+    await limiter.ratelimit("test", fifteen)
 
     # 30 seconds later
     thirty = start + 30
-    await limiter("test", thirty)
+    await limiter.ratelimit("test", thirty)
 
     # 45 seconds later
     forty_five = start + 45
     with pytest.raises(RateLimitError) as exc_info:
-        await limiter("test", forty_five)
+        await limiter.ratelimit("test", forty_five)
 
     retry_after = exc_info.value.retry_after
     assert retry_after.seconds == 15
@@ -187,7 +187,7 @@ async def test_ratelimit(client):
     # 59 seconds later
     fifty_nine = start + 59
     with pytest.raises(RateLimitError) as exc_info:
-        await limiter("test", fifty_nine)
+        await limiter.ratelimit("test", fifty_nine)
     
     retry_after = exc_info.value.retry_after
     assert retry_after.seconds == 1
@@ -195,12 +195,12 @@ async def test_ratelimit(client):
 
     # 60 seconds later
     sixty = start + 60
-    await limiter("test", sixty)
+    await limiter.ratelimit("test", sixty)
 
     # 65 seconds later
     sixty_five = start + 65
     with pytest.raises(RateLimitError) as exc_info:
-        await limiter("test", sixty_five)
+        await limiter.ratelimit("test", sixty_five)
 
     retry_after = exc_info.value.retry_after
     assert retry_after.seconds == 10
