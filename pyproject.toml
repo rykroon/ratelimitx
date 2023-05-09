@@ -38,9 +38,9 @@ path = "ratelimitx/__about__.py"
 
 [tool.hatch.envs.default]
 dependencies = [
+  "coverage[toml]>=6.5",
   "pytest",
   "pytest-asyncio",
-  "pytest-cov",
 ]
 [tool.hatch.envs.default.scripts]
 test = "pytest {args:tests}"
@@ -54,15 +54,20 @@ cov = [
   "cov-report",
 ]
 
-[[tool.hatch.envs.test.matrix]]
-python = ["39", "310", "311"]
+[[tool.hatch.envs.all.matrix]]
+python = ["3.9", "3.10", "3.11"]
 
 [tool.coverage.run]
+source_pkgs = ["ratelimitx", "tests"]
 branch = true
 parallel = true
 omit = [
   "ratelimitx/__about__.py",
 ]
+
+[tool.coverage.paths]
+foobar = ["src/ratelimitx", "*/ratelimitx/src/ratelimitx"]
+tests = ["tests", "*/ratelimitx/tests"]
 
 [tool.coverage.report]
 exclude_lines = [
