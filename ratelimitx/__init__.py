@@ -31,7 +31,7 @@ class RateLimiter:
             return self.delimiter.join([identifier, str(self.window_length)])
         return self.delimiter.join([self.prefix, identifier, str(self.window_length)])
 
-    async def ratelimit(
+    async def rate_limit(
         self,
         identifier: str,
         timestamp: Optional[float] = None,
@@ -138,13 +138,13 @@ class MultiRateLimiter:
 
         return cls.from_mapping(client, mapping)
 
-    async def ratelimit(self, identifier: str, timestamp: Optional[float] = None):
+    async def rate_limit(self, identifier: str, timestamp: Optional[float] = None):
         if timestamp is None:
             timestamp = time.time()
 
         # Perform rate-limiting on each rate limiter.
         coroutines = [
-            rl.ratelimit(identifier, timestamp, add_timestamp=False) for rl in self.rate_limiters
+            rl.rate_limit(identifier, timestamp, add_timestamp=False) for rl in self.rate_limiters
         ]
         results = await asyncio.gather(*coroutines, return_exceptions=True)
         errors = [result for result in results if isinstance(result, RateLimitError)]
