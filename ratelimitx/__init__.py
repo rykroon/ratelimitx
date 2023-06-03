@@ -156,7 +156,8 @@ class MultiRateLimiter:
 
         # Perform rate-limiting on each rate limiter.
         coroutines = [
-            rl.rate_limit(identifier, timestamp, add_timestamp=False) for rl in self.rate_limiters
+            rl.rate_limit(identifier, timestamp, add_timestamp=False)
+            for rl in self.rate_limiters
         ]
         results = await asyncio.gather(*coroutines, return_exceptions=True)
         errors = [result for result in results if isinstance(result, RateLimitError)]
