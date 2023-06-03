@@ -9,7 +9,9 @@ from redis.asyncio import Redis
 
 @dataclass(order=True)
 class RetryAfter:
+    # A date after which to retry.
     date: datetime
+    # The number of seconds to wait before retrying.
     seconds: float
 
 
@@ -38,7 +40,13 @@ class RateLimiter:
         add_timestamp: bool = True,
     ):
         """
-        Raise a RateLimitError if rate limited.
+        identifier: An identifier for the subject that is being rate limited.
+        timestamp: The time at which the rate-limited event is happening. Defaults to
+            the current system time.
+        add_timestamp: If True, the timestamp will be added to the window if the subject
+            was not rate-limited.
+
+        Raises a RateLimitError if the event was rate limited.
         """
         if timestamp is None:
             timestamp = time.time()
@@ -57,7 +65,11 @@ class RateLimiter:
         self, identifier: str, timestamp: Optional[float] = None
     ) -> tuple[int, Optional[float]]:
         """
-        Remove expired timestamps (slides the window).
+        identifier: An identifier for the subject that is being rate limited.
+        timestamp: The time at which the rate-limited event is happening. Defaults to
+            the current system time.
+
+        Removes expired timestamps (slides the window).
         Returns a tuple containing the number of unexpired timestamps
         and the least recent timestamp if applicable or None.
         """
@@ -81,7 +93,7 @@ class RateLimiter:
 
     async def add_timestamp(self, identifier: str, timestamp: Optional[float] = None):
         """
-        Adds a timestamp and updates the expiration.
+        Adds a timestamp to the window and updates the TTL.
         """
         key = self._build_key(identifier)
         if timestamp is None:
