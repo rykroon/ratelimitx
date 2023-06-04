@@ -30,7 +30,7 @@ class RateLimiter:
     delimiter: str = "|"
     client: InitVar[Optional[Redis]] = None
 
-    def __init_subclass__(cls, /, client: Redis | None = None, **kwargs) -> None:
+    def __init_subclass__(cls, /, client: Optional[Redis] = None, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
         cls.default_client = client
 

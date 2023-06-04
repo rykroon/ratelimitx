@@ -15,47 +15,40 @@ async def client():
     return client
 
 
+def test_missing_client():
+    with pytest.raises(TypeError):
+        RateLimiter(window_length=60, n=5)
+
+
+def test_default_client(client):
+    class MyRateLimiter(RateLimiter, client=client):
+        ...
+
+    limiter = MyRateLimiter(window_length=60, n=5)
+    assert limiter.client is client
+
+
 def test_build_key(client):
     # test default
-    limiter = RateLimiter(
-        client=client,
-        window_length=60,
-        n=5
-    )
-
+    limiter = RateLimiter(window_length=60, n=5, client=client)
     assert limiter._build_key("test") == "test|60"
 
     # Test custom prefix
-    limiter = RateLimiter(
-        client=client,
-        window_length=60,
-        n=5,
-        prefix="prefix"
-    )
-
+    limiter = RateLimiter(window_length=60, n=5, prefix="prefix", client=client)
     assert limiter._build_key("test") == "prefix|test|60"
 
     # Test custom deilimiter.
-    limiter = RateLimiter(
-        client=client,
-        window_length=60,
-        n=5,
-        delimiter=":"
-    )
-
+    limiter = RateLimiter(window_length=60, n=5, delimiter=":", client=client)
     assert limiter._build_key("test") == "test:60"
 
 
 @pytest.mark.asyncio
 async def test_add_timestamp(client):
-    limiter = RateLimiter(
-        client=client, window_length=60, n=5
-    )
-
+    limiter = RateLimiter(window_length=60, n=5, client=client)
     await limiter.add_timestamp("test")
 
     key = limiter._build_key("test")
-    
+
     # Confirm that the ttl was set.
     assert await client.ttl(key) == limiter.window_length
 
@@ -65,10 +58,7 @@ async def test_add_timestamp(client):
 
 @pytest.mark.asyncio
 async def test_slide_window_one(client):
-    limiter = RateLimiter(
-        client=client, window_length=60, n=5
-    )
-
+    limiter = RateLimiter(window_length=60, n=5, client=client)
     # Test running slide_window() without adding any timestamps.
     ts = time.time()
     count, least_recent_timestamp = await limiter.slide_window("test", ts)
@@ -78,10 +68,7 @@ async def test_slide_window_one(client):
 
 @pytest.mark.asyncio
 async def test_slide_window_two(client):
-    limiter = RateLimiter(
-        client=client, window_length=60, n=5
-    )
-
+    limiter = RateLimiter(window_length=60, n=5, client=client)
     # test to make sure that a timestamp will show up in the window.
     ts = time.time()
     await limiter.add_timestamp("test", ts)
@@ -93,9 +80,7 @@ async def test_slide_window_two(client):
 
 @pytest.mark.asyncio
 async def test_slide_window_three(client):
-    limiter = RateLimiter(
-        client=client, window_length=60, n=5
-    )
+    limiter = RateLimiter(window_length=60, n=5, client=client)
 
     # Test to make sure that a timestamp will slide out of the window
     start = time.time()
@@ -117,10 +102,7 @@ async def test_slide_window_three(client):
 
 @pytest.mark.asyncio
 async def test_slide_window_four(client):
-    limiter = RateLimiter(
-        client=client, window_length=60, n=5
-    )
-
+    limiter = RateLimiter(window_length=60, n=5, client=client)
     # make sure that the least recent timestamp is accurate over time.
 
     start = time.time()
@@ -160,9 +142,7 @@ async def test_slide_window_four(client):
 
 @pytest.mark.asyncio
 async def test_rate_limit(client):
-    limiter = RateLimiter(
-        client=client, window_length=60, n=3
-    )
+    limiter = RateLimiter(window_length=60, n=3, client=client)
 
     start = time.time()
     await limiter.rate_limit("test", start)
@@ -188,7 +168,7 @@ async def test_rate_limit(client):
     fifty_nine = start + 59
     with pytest.raises(RateLimitError) as exc_info:
         await limiter.rate_limit("test", fifty_nine)
-    
+
     retry_after = exc_info.value.retry_after
     assert retry_after.seconds == 1
     assert retry_after.date == datetime.fromtimestamp(fifty_nine + 1)
