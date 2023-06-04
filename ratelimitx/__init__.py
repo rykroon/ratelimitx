@@ -118,16 +118,25 @@ class RateLimiter:
 
 @dataclass
 class MultiRateLimiter:
+    default_client: ClassVar[Optional[Redis]] = None
+
     rate_limiters: list[RateLimiter]
 
+    def __init_subclass__(cls, /, client: Optional[Redis] = None, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls.default_client = client
+
     @classmethod
-    def from_mapping(cls, client: Redis, mapping: dict[int, int]):
+    def from_mapping(cls, mapping: dict[int, int], client: Optional[Redis] = None):
         """
         Creates a new multi-ratelimiter by creating new rate limiter objects
         from a mapping containing window lengths for keys and units for values.
         """
+        if client is None:
+            client = cls.default_client
+ 
         rate_limiters = [
-            RateLimiter(client, window_length, n)
+            RateLimiter(window_length, n, client=client)
             for window_length, n in mapping.items()
         ]
         return cls(rate_limiters)
@@ -135,11 +144,12 @@ class MultiRateLimiter:
     @classmethod
     def new(
         cls,
-        client: Redis,
+        *,
         per_second: Optional[int] = None,
         per_minute: Optional[int] = None,
         per_hour: Optional[int] = None,
         per_day: Optional[int] = None,
+        client: Optional[Redis] = None
     ):
         """
         Creates a new multi-ratelimiter by specifying the number
@@ -159,7 +169,7 @@ class MultiRateLimiter:
         if per_day is not None:
             mapping[86400] = per_day
 
-        return cls.from_mapping(client, mapping)
+        return cls.from_mapping(mapping, client=client)
 
     async def rate_limit(self, identifier: str, timestamp: Optional[float] = None):
         if timestamp is None:

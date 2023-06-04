@@ -19,22 +19,20 @@ async def client():
 def test_from_mapping(client):
     mapping = {1: 1, 60: 2, 3_600: 3, 86_400: 5}
 
-    multilimiter = MultiRateLimiter.from_mapping(
-        client=client, mapping=mapping
-    )
+    multilimiter = MultiRateLimiter.from_mapping(mapping, client=client)
 
     assert len(multilimiter.rate_limiters) == 4
 
-    limiter_one = RateLimiter(client=client, window_length=1, n=1)
+    limiter_one = RateLimiter(window_length=1, n=1, client=client)
     assert multilimiter.rate_limiters[0] == limiter_one
 
-    limiter_two = RateLimiter(client=client, window_length=60, n=2)
+    limiter_two = RateLimiter(window_length=60, n=2, client=client)
     assert multilimiter.rate_limiters[1] == limiter_two
 
-    limiter_three = RateLimiter(client=client, window_length=3600, n=3)
+    limiter_three = RateLimiter(window_length=3600, n=3, client=client)
     assert multilimiter.rate_limiters[2] == limiter_three
 
-    limiter_four = RateLimiter(client=client, window_length=86_400, n=5)
+    limiter_four = RateLimiter(window_length=86_400, n=5, client=client)
     assert multilimiter.rate_limiters[3] == limiter_four
 
 
