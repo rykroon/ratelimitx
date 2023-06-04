@@ -22,6 +22,8 @@ class RateLimitError(Exception):
 
 @dataclass
 class RateLimiter:
+    default_client: ClassVar[Optional[Redis]] = None
+
     window_length: int
     n: int
     prefix: Optional[str] = None
@@ -30,10 +32,10 @@ class RateLimiter:
 
     def __init_subclass__(cls, /, client: Redis | None = None, **kwargs) -> None:
         super().__init_subclass__(**kwargs)
-        cls.client = client
+        cls.default_client = client
 
     def __post_init__(self, client):
-        self.client = client if client is not None else self.__class__.client
+        self.client = client if client is not None else self.__class__.default_client
         if self.client is None:
             raise TypeError("Missing required argument: 'client'.")
 
