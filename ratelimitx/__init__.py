@@ -1,8 +1,8 @@
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, InitVar
 from datetime import datetime
 import time
-from typing import Optional
+from typing import ClassVar, Optional
 
 from redis.asyncio import Redis
 
@@ -22,11 +22,20 @@ class RateLimitError(Exception):
 
 @dataclass
 class RateLimiter:
-    client: Redis
     window_length: int
     n: int
     prefix: Optional[str] = None
     delimiter: str = "|"
+    client: InitVar[Optional[Redis]] = None
+
+    def __init_subclass__(cls, /, client: Redis | None = None, **kwargs) -> None:
+        super().__init_subclass__(**kwargs)
+        cls.client = client
+
+    def __post_init__(self, client):
+        self.client = client if client is not None else self.__class__.client
+        if self.client is None:
+            raise TypeError("Missing required argument: 'client'.")
 
     def _build_key(self, identifier: str) -> str:
         if self.prefix is None:
